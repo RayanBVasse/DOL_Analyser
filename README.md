@@ -1,4 +1,4 @@
-# Chat Analyser
+# Distribution of Cognitive Load Analyser
 
 Understand how your conversations with AI have evolved over time.
 
