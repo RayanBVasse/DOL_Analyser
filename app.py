@@ -19,7 +19,7 @@ from pipeline import precheck
 # ---------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="Chat Analyser",
+    page_title="DOL Analyser",
     page_icon="💬",
     layout="centered",
 )
@@ -37,8 +37,8 @@ if "json_tmp_path" not in st.session_state:
 # Header
 # ---------------------------------------------------------------------------
 
-st.title("💬 Chat Analyser")
-st.caption("Understand how your conversations with AI have evolved over time.")
+st.title("💬 DOL Analyser")
+st.caption("Distribution of Cognitive Load — understand how your conversations with AI have evolved over time.")
 
 st.info(
     "**Your data never leaves your device.** "
@@ -156,6 +156,6 @@ if st.session_state.precheck_result and st.session_state.precheck_result.ready:
 
 st.divider()
 st.caption(
-    "Chat Analyser · open source · MIT licence · "
-    "[github.com/RayanBVasse/Chat_analyser](https://github.com/RayanBVasse/Chat_analyser)"
+    "DOL Analyser · open source · MIT licence · "
+    "[github.com/RayanBVasse/DOL_analyser](https://github.com/RayanBVasse/DOL_analyser)"
 )

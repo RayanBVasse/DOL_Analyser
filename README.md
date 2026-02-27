@@ -1,6 +1,6 @@
-# Chat Analyser
+# DOL Analyser
 
-Understand how your conversations with AI have evolved over time.
+**Distribution of Cognitive Load** — understand how your conversations with AI have evolved over time.
 
 Upload your `conversations.json` export from ChatGPT or Claude and get a
 self-contained HTML report covering topic evolution, cognitive style,
@@ -51,3 +51,8 @@ Then open the browser tab that appears and upload your `conversations.json`.
 ## Licence
 
 MIT © 2026 Rayan B Vasse
+
+---
+
+> **DOL** = Distribution of (Cognitive) Load — a framework for analysing
+> how intellectual engagement is distributed across a human–AI dialogue over time.
