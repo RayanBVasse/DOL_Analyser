@@ -22,9 +22,10 @@ data/
 *.sqlite
 *.db
 
-# PyInstaller output
+# PyInstaller output (keep our spec, ignore generated artefacts)
 dist/
 *.spec
+!dol_analyser.spec
 
 # OS
 .DS_Store
