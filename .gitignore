@@ -40,3 +40,6 @@ Thumbs.db
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local session outputs (temp_out/ dir kept, session contents ignored)
+temp_out/*/

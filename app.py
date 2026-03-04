@@ -7,7 +7,7 @@ Run locally with:
 
 from __future__ import annotations
 
-import tempfile
+import datetime
 from pathlib import Path
 
 import streamlit as st
@@ -22,6 +22,10 @@ from pipeline import (
     coupling,
     dynamics,
 )
+
+# Persistent session output root (committed as empty dir; contents git-ignored)
+TEMP_OUT = Path(__file__).parent / "temp_out"
+TEMP_OUT.mkdir(exist_ok=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page config
@@ -118,10 +122,19 @@ uploaded = st.file_uploader(
 
 # If user uploads a new file, wipe all downstream results
 if uploaded is not None and st.session_state.json_tmp_path is None:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="wb") as tmp:
-        tmp.write(uploaded.read())
-        st.session_state.json_tmp_path = tmp.name
-    st.session_state.work_dir = tempfile.mkdtemp(prefix="dol_")
+    # Build a human-readable session name: <filename>_YYYYMMDD_HHMMSS
+    stem = Path(uploaded.name).stem[:30]          # cap at 30 chars
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_name = f"{stem}_{stamp}"
+
+    work_dir = TEMP_OUT / session_name
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    json_path = work_dir / "upload.json"
+    json_path.write_bytes(uploaded.read())
+
+    st.session_state.json_tmp_path = str(json_path)
+    st.session_state.work_dir      = str(work_dir)
     _reset_downstream("precheck_result")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -591,10 +604,100 @@ if st.session_state.domains_result:
             )
 
         st.success("Behavioural dynamics analysis complete.", icon="✅")
-        st.info(
-            "📊 Interactive charts and full HTML report export coming in the next release.",
-            icon="🚧",
-        )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Report preview — charts (shown once dynamics is complete)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if st.session_state.dynamics_result:
+    st.divider()
+    st.subheader("📊 Report Preview")
+    st.caption(
+        f"Session: `{Path(st.session_state.work_dir).name}`  ·  "
+        f"All intermediate files saved to `temp_out/{Path(st.session_state.work_dir).name}/`"
+    )
+
+    import pandas as pd
+    from reports import charts
+
+    work = Path(st.session_state.work_dir)
+
+    # Helper: safe CSV load
+    def _csv(name: str) -> pd.DataFrame:
+        p = work / name
+        return pd.read_csv(p) if p.exists() else pd.DataFrame()
+
+    def _csv_sub(sub: str, name: str) -> pd.DataFrame:
+        p = work / sub / name
+        return pd.read_csv(p) if p.exists() else pd.DataFrame()
+
+    tabs = st.tabs([
+        "Cognitive style",
+        "Topic entropy",
+        "Alignment",
+        "Domains",
+        "Domain focus",
+        "States",
+        "Coupling",
+        "Shifts",
+    ])
+
+    with tabs[0]:
+        traj = _csv_sub("profile", "trajectory_monthly.csv")
+        if not traj.empty:
+            st.plotly_chart(charts.cognitive_style_timeline(traj),
+                            use_container_width=True)
+
+    with tabs[1]:
+        entropy_df  = _csv("monthly_topic_entropy_tfidf.csv")
+        rolling_df  = _csv("rolling_entropy_250.csv")
+        if not entropy_df.empty:
+            st.plotly_chart(
+                charts.topic_entropy_timeline(entropy_df, rolling_df or None),
+                use_container_width=True,
+            )
+
+    with tabs[2]:
+        align_df = _csv("dyadic_alignment_monthly.csv")
+        if not align_df.empty:
+            st.plotly_chart(charts.dyadic_alignment_timeline(align_df),
+                            use_container_width=True)
+
+    with tabs[3]:
+        domain_summary = _csv("macro_domain_summary.csv")
+        if not domain_summary.empty:
+            st.plotly_chart(charts.macro_domain_bar(domain_summary),
+                            use_container_width=True)
+
+    with tabs[4]:
+        shares_df = _csv("macro_monthly_domain_shares.csv")
+        if not shares_df.empty:
+            st.plotly_chart(
+                charts.domain_shares_area(shares_df, domain_summary or None),
+                use_container_width=True,
+            )
+
+    with tabs[5]:
+        states_df = _csv("monthly_states.csv")
+        if not states_df.empty:
+            st.plotly_chart(charts.state_timeline(states_df),
+                            use_container_width=True)
+
+    with tabs[6]:
+        coup_df = _csv("coupling_by_domain.csv")
+        if not coup_df.empty:
+            st.plotly_chart(
+                charts.coupling_bar(coup_df, domain_summary or None),
+                use_container_width=True,
+            )
+
+    with tabs[7]:
+        shift_df = _csv("shift_initiation_summary.csv")
+        if not shift_df.empty:
+            st.plotly_chart(charts.shift_initiation_donut(shift_df),
+                            use_container_width=True)
+
+    st.info("HTML report export coming next.", icon="🚧")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Footer
