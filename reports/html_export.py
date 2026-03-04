@@ -322,8 +322,29 @@ def _section(number: int, title: str, narrative_html: str, chart_html: str) -> s
 """
 
 
+def _plotly_script_tag() -> str:
+    """
+    Return a <script> tag that makes Plotly available on the page.
+
+    Strategy (in order):
+      1. Inline the JS bundle shipped with the locally-installed plotly package
+         → fully self-contained, works offline, always version-matched.
+      2. CDN fallback if the local bundle is missing (requires internet).
+    """
+    try:
+        import plotly as _plotly
+        bundle = Path(_plotly.__file__).parent / "package_data" / "plotly.min.js"
+        if bundle.exists():
+            js = bundle.read_text(encoding="utf-8")
+            return f"<script>{js}</script>"
+    except Exception:
+        pass
+    # Fallback: CDN (requires internet connection)
+    return '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
+
+
 def _fig_html(fig: go.Figure) -> str:
-    """Convert figure to inline HTML (no Plotly JS — loaded once in head)."""
+    """Serialise a figure to an HTML fragment (Plotly JS loaded separately)."""
     return fig.to_html(
         full_html=False,
         include_plotlyjs=False,
@@ -454,11 +475,7 @@ def build(
     session_name = meta.get("session_name", "")
 
     # ── Assemble full HTML ────────────────────────────────────────────────────
-    import plotly.io as pio
-    plotly_js = pio.to_html(go.Figure(), full_html=False, include_plotlyjs="cdn")
-    # Extract just the <script src=...> tag so we load Plotly once
-    # Fall back to CDN tag if extraction fails
-    cdn_tag = '<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>'
+    plotly_tag = _plotly_script_tag()   # inline bundle or CDN fallback
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -466,7 +483,7 @@ def build(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DOL Analyser Report — {session_name}</title>
-  {cdn_tag}
+  {plotly_tag}
   <style>{_CSS}</style>
 </head>
 <body>
