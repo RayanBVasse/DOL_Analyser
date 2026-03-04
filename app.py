@@ -12,7 +12,16 @@ from pathlib import Path
 
 import streamlit as st
 
-from pipeline import precheck, parse, profile
+from pipeline import (
+    precheck,
+    parse,
+    profile,
+    topics,
+    alignment,
+    domains,
+    coupling,
+    dynamics,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page config
@@ -29,11 +38,16 @@ st.set_page_config(
 # ─────────────────────────────────────────────────────────────────────────────
 
 defaults = {
-    "json_tmp_path": None,
-    "work_dir":      None,   # temp dir holding the SQLite db + CSVs
-    "precheck_result": None,
-    "parse_result":    None,
-    "profile_result":  None,
+    "json_tmp_path":    None,
+    "work_dir":         None,   # temp dir holding the SQLite db + CSVs
+    "precheck_result":  None,
+    "parse_result":     None,
+    "profile_result":   None,
+    "topics_result":    None,
+    "alignment_result": None,
+    "domains_result":   None,
+    "coupling_result":  None,
+    "dynamics_result":  None,
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -42,7 +56,16 @@ for key, val in defaults.items():
 
 def _reset_downstream(from_step: str):
     """Clear all state at and after a given step so reruns start fresh."""
-    order = ["precheck_result", "parse_result", "profile_result"]
+    order = [
+        "precheck_result",
+        "parse_result",
+        "profile_result",
+        "topics_result",
+        "alignment_result",
+        "domains_result",
+        "coupling_result",
+        "dynamics_result",
+    ]
     clear = False
     for key in order:
         if key == from_step:
@@ -173,10 +196,10 @@ if st.session_state.precheck_result and st.session_state.precheck_result.ready:
     if st.session_state.parse_result:
         p = st.session_state.parse_result
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Threads",           f"{p['threads']:,}")
-        col2.metric("Total messages",    f"{p['messages']:,}")
-        col3.metric("Your messages",     f"{p['user_messages']:,}")
-        col4.metric("AI messages",       f"{p['asst_messages']:,}")
+        col1.metric("Threads",        f"{p['threads']:,}")
+        col2.metric("Total messages", f"{p['messages']:,}")
+        col3.metric("Your messages",  f"{p['user_messages']:,}")
+        col4.metric("AI messages",    f"{p['asst_messages']:,}")
         st.success("Conversations parsed and stored.", icon="✅")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -189,8 +212,8 @@ if st.session_state.parse_result:
 
     if st.session_state.profile_result is None:
         if st.button("Run profile", type="primary", key="btn_profile"):
-            db_path  = Path(st.session_state.work_dir) / "conversations.db"
-            out_dir  = Path(st.session_state.work_dir) / "profile"
+            db_path = Path(st.session_state.work_dir) / "conversations.db"
+            out_dir = Path(st.session_state.work_dir) / "profile"
             bar = st.progress(0.0, text="Starting profile…")
             try:
                 result = profile.run(
@@ -215,45 +238,361 @@ if st.session_state.parse_result:
             icon="✅",
         )
 
-        # Trajectory table
         traj_path = Path(st.session_state.work_dir) / "profile" / "trajectory_monthly.csv"
         if traj_path.exists():
             traj = pd.read_csv(traj_path)
             st.markdown("**Monthly marker rates (per 1,000 user messages)**")
-            display_cols = ["year_month", "user_messages",
-                            "structural_thinking_per1k",
-                            "epistemic_uncertainty_per1k"]
+            display_cols = [
+                "year_month", "user_messages",
+                "structural_thinking_per1k",
+                "epistemic_uncertainty_per1k",
+            ]
             display_cols = [c for c in display_cols if c in traj.columns]
             st.dataframe(
                 traj[display_cols].rename(columns={
-                    "year_month":                    "Month",
-                    "user_messages":                 "Messages",
-                    "structural_thinking_per1k":     "Structural thinking /1k",
-                    "epistemic_uncertainty_per1k":   "Epistemic uncertainty /1k",
+                    "year_month":                  "Month",
+                    "user_messages":               "Messages",
+                    "structural_thinking_per1k":   "Structural thinking /1k",
+                    "epistemic_uncertainty_per1k": "Epistemic uncertainty /1k",
                 }),
                 use_container_width=True,
                 hide_index=True,
             )
 
-        # Spearman results
-        spearman_path = Path(st.session_state.work_dir) / "profile" / "spearman_results.csv"
+        spearman_path = (
+            Path(st.session_state.work_dir) / "profile" / "spearman_results.csv"
+        )
         if spearman_path.exists():
             stat = pd.read_csv(spearman_path)
             st.markdown("**Spearman correlations with time**")
             st.dataframe(
-                stat[["marker", "spearman_rho", "p_value", "significant"]].rename(columns={
-                    "marker":       "Marker",
-                    "spearman_rho": "ρ",
-                    "p_value":      "p",
-                    "significant":  "p < 0.05",
+                stat[["marker", "spearman_rho", "p_value", "significant"]].rename(
+                    columns={
+                        "marker":       "Marker",
+                        "spearman_rho": "ρ",
+                        "p_value":      "p",
+                        "significant":  "p < 0.05",
+                    }
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 5 — Topic modelling  (DOL Steps 5–6: TF-IDF + SVD + KMeans)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if st.session_state.profile_result:
+    st.divider()
+    st.subheader("5. Topic modelling")
+
+    if st.session_state.topics_result is None:
+        st.info(
+            "Fits TF-IDF + SVD + KMeans on all messages to discover up to 60 topics. "
+            "This step may take 1–3 minutes on large datasets.",
+            icon="ℹ️",
+        )
+        if st.button("Run topic modelling", type="primary", key="btn_topics"):
+            db_path = Path(st.session_state.work_dir) / "conversations.db"
+            out_dir = Path(st.session_state.work_dir)
+            bar = st.progress(0.0, text="Starting topic modelling…")
+            try:
+                result = topics.run(
+                    db_path=db_path,
+                    out_dir=out_dir,
+                    progress_cb=lambda f, m: bar.progress(f, text=m),
+                )
+                bar.empty()
+                st.session_state.topics_result = result
+                st.rerun()
+            except Exception as exc:
+                bar.empty()
+                st.error(f"Topic modelling failed: {exc}", icon="❌")
+
+    if st.session_state.topics_result:
+        import pandas as pd
+
+        tr = st.session_state.topics_result
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Topics found",   tr.get("n_clusters", "—"))
+        col2.metric("Vocabulary",     f"{tr.get('vocab_size', 0):,}")
+        col3.metric("Months covered", tr.get("months_with_data", "—"))
+        col4.metric(
+            "Entropy range",
+            f"{tr.get('entropy_min', 0):.2f}–{tr.get('entropy_max', 0):.2f}",
+        )
+
+        cluster_path = Path(st.session_state.work_dir) / "cluster_summary_tfidf.csv"
+        if cluster_path.exists():
+            cls_df = pd.read_csv(cluster_path).head(10)
+            st.markdown("**Top 10 topics by message count**")
+            st.dataframe(
+                cls_df[["cluster_id", "size", "auto_label"]].rename(columns={
+                    "cluster_id": "Topic #",
+                    "size":       "Messages",
+                    "auto_label": "Key terms",
                 }),
                 use_container_width=True,
                 hide_index=True,
             )
 
+        st.success("Topic model fitted — cluster assignments saved to database.", icon="✅")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 6 — Dyadic alignment  (DOL Step 7: monthly JS divergence)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if st.session_state.topics_result:
+    st.divider()
+    st.subheader("6. Dyadic alignment")
+
+    if st.session_state.alignment_result is None:
         st.info(
-            "Visualisation charts coming in Week 6. "
-            "HTML report export coming in Week 7.",
+            "Measures how similar your topics are to the AI's topics each month "
+            "(Jensen-Shannon divergence — lower = more in sync).",
+            icon="ℹ️",
+        )
+        if st.button("Run alignment", type="primary", key="btn_alignment"):
+            db_path = Path(st.session_state.work_dir) / "conversations.db"
+            out_dir = Path(st.session_state.work_dir)
+            bar = st.progress(0.0, text="Computing dyadic alignment…")
+            try:
+                result = alignment.run(
+                    db_path=db_path,
+                    out_dir=out_dir,
+                    progress_cb=lambda f, m: bar.progress(f, text=m),
+                )
+                bar.empty()
+                st.session_state.alignment_result = result
+                st.rerun()
+            except Exception as exc:
+                bar.empty()
+                st.error(f"Alignment failed: {exc}", icon="❌")
+
+    if st.session_state.alignment_result:
+        import pandas as pd
+
+        ar = st.session_state.alignment_result
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Months computed", ar.get("months_computed", "—"))
+        col2.metric("Mean JS",         f"{ar.get('mean_js', 0):.4f}")
+        col3.metric("Min JS",          f"{ar.get('min_js', 0):.4f}")
+        col4.metric("Max JS",          f"{ar.get('max_js', 0):.4f}")
+
+        align_path = Path(st.session_state.work_dir) / "dyadic_alignment_monthly.csv"
+        if align_path.exists():
+            align_df = pd.read_csv(align_path)
+            st.markdown("**Monthly JS divergence (you vs AI topic distributions)**")
+            st.dataframe(
+                align_df.rename(columns={
+                    "year_month":    "Month",
+                    "user_msgs":     "Your msgs",
+                    "asst_msgs":     "AI msgs",
+                    "js_divergence": "JS divergence",
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        st.success("Dyadic alignment computed.", icon="✅")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 7 — Macro-domain mapping  (DOL Steps 8.5–8.6)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if st.session_state.alignment_result:
+    st.divider()
+    st.subheader("7. Macro-domain mapping")
+
+    if st.session_state.domains_result is None:
+        st.info(
+            "Groups the fine topics into 8 broad macro-domains "
+            "(e.g. code, science, writing, creative…). "
+            "This step re-runs TF-IDF for labelling and may take 1–3 minutes.",
+            icon="ℹ️",
+        )
+        if st.button("Run domain mapping", type="primary", key="btn_domains"):
+            db_path = Path(st.session_state.work_dir) / "conversations.db"
+            out_dir = Path(st.session_state.work_dir)
+            bar = st.progress(0.0, text="Building macro-domain map…")
+            try:
+                result = domains.run(
+                    db_path=db_path,
+                    out_dir=out_dir,
+                    progress_cb=lambda f, m: bar.progress(f, text=m),
+                )
+                bar.empty()
+                st.session_state.domains_result = result
+                st.rerun()
+            except Exception as exc:
+                bar.empty()
+                st.error(f"Domain mapping failed: {exc}", icon="❌")
+
+    if st.session_state.domains_result:
+        import pandas as pd
+
+        dr = st.session_state.domains_result
+        st.success(
+            f"Identified {dr.get('n_macro', 8)} macro-domains "
+            f"across {dr.get('months_computed', '—')} months.",
+            icon="✅",
+        )
+
+        domain_path = Path(st.session_state.work_dir) / "macro_domain_summary.csv"
+        if domain_path.exists():
+            dom_df = pd.read_csv(domain_path)
+            st.markdown("**Macro-domains (ranked by message count)**")
+            st.dataframe(
+                dom_df[["macro_domain", "size", "auto_label"]].rename(columns={
+                    "macro_domain": "Domain #",
+                    "size":         "Messages",
+                    "auto_label":   "Top terms",
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 8 — Lead–lag coupling  (DOL Steps 9–9.1)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if st.session_state.domains_result:
+    st.divider()
+    st.subheader("8. Lead–lag coupling")
+
+    if st.session_state.coupling_result is None:
+        st.info(
+            "Tests whether your topic changes predict the AI's next-month topics "
+            "(user leads) or vice versa — lag-1 cosine similarity with "
+            "permutation p-values (N=2,000).",
+            icon="ℹ️",
+        )
+        if st.button("Run coupling analysis", type="primary", key="btn_coupling"):
+            out_dir = Path(st.session_state.work_dir)
+            bar = st.progress(0.0, text="Computing lead-lag coupling…")
+            try:
+                result = coupling.run(
+                    out_dir=out_dir,
+                    progress_cb=lambda f, m: bar.progress(f, text=m),
+                )
+                bar.empty()
+                st.session_state.coupling_result = result
+                st.rerun()
+            except Exception as exc:
+                bar.empty()
+                st.error(f"Coupling analysis failed: {exc}", icon="❌")
+
+    if st.session_state.coupling_result:
+        import pandas as pd
+
+        cr = st.session_state.coupling_result
+        direction = "You lead the AI 🡒" if cr.get("user_leads") else "AI leads you 🡐"
+        lead_diff = cr.get("lead_diff", 0)
+        p_diff    = cr.get("p_diff", 1)
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Direction",      direction)
+        col2.metric("Forward cosine", f"{cr.get('forward_mean', 0):.4f}")
+        col3.metric("Reverse cosine", f"{cr.get('reverse_mean', 0):.4f}")
+        col4.metric("Lead diff",      f"{lead_diff:.4f}  (p={p_diff:.3f})")
+
+        st.success(
+            f"Lead–lag coupling computed over {cr.get('n_months', '—')} months.",
+            icon="✅",
+        )
+
+        domain_coup_path = Path(st.session_state.work_dir) / "coupling_by_domain.csv"
+        if domain_coup_path.exists():
+            dc_df = pd.read_csv(domain_coup_path)
+            st.markdown("**Per-domain coupling (Pearson r, lag-1)**")
+            st.dataframe(
+                dc_df.round(4).rename(columns={
+                    "macro_domain":      "Domain #",
+                    "r_user_leads_asst": "r (you→AI)",
+                    "p_user_leads_asst": "p (you→AI)",
+                    "r_asst_leads_user": "r (AI→you)",
+                    "p_asst_leads_user": "p (AI→you)",
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 9 — Behavioural dynamics  (DOL Step 10a2, 10a3, 10b)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if st.session_state.domains_result:
+    st.divider()
+    st.subheader("9. Behavioural dynamics")
+
+    if st.session_state.dynamics_result is None:
+        st.info(
+            "Assigns each month to an Exploration / Consolidation / Transitional "
+            "state, computes rolling topic entropy (window = 250 messages), and "
+            "tests who initiates domain shifts within conversations.",
+            icon="ℹ️",
+        )
+        if st.button("Run dynamics analysis", type="primary", key="btn_dynamics"):
+            db_path = Path(st.session_state.work_dir) / "conversations.db"
+            out_dir = Path(st.session_state.work_dir)
+            bar = st.progress(0.0, text="Running dynamics analysis…")
+            try:
+                result = dynamics.run(
+                    db_path=db_path,
+                    out_dir=out_dir,
+                    progress_cb=lambda f, m: bar.progress(f, text=m),
+                )
+                bar.empty()
+                st.session_state.dynamics_result = result
+                st.rerun()
+            except Exception as exc:
+                bar.empty()
+                st.error(f"Dynamics analysis failed: {exc}", icon="❌")
+
+    if st.session_state.dynamics_result:
+        import pandas as pd
+
+        dyn = st.session_state.dynamics_result
+
+        # State counts
+        state_counts = dyn.get("state_counts", {})
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Exploration months",   state_counts.get("Exploration",    "—"))
+        col2.metric("Consolidation months", state_counts.get("Consolidation",  "—"))
+        col3.metric("Transitional months",  state_counts.get("Transitional",   "—"))
+        col4.metric("Rolling windows",      dyn.get("rolling_windows",         "—"))
+
+        # Shift initiation
+        if "user_initiated_prop" in dyn:
+            u_pct  = round(dyn["user_initiated_prop"] * 100, 1)
+            a_pct  = round((1.0 - dyn["user_initiated_prop"]) * 100, 1)
+            p_perm = dyn.get("p_perm", "—")
+            total  = dyn.get("total_shifts", "—")
+            st.markdown(
+                f"**Domain shift initiation** ({total} total shifts) — "
+                f"You: **{u_pct}%** | AI: **{a_pct}%** "
+                f"(permutation p vs 50/50 = {p_perm})"
+            )
+
+        # Monthly states table
+        states_path = Path(st.session_state.work_dir) / "monthly_states.csv"
+        if states_path.exists():
+            states_df = pd.read_csv(states_path)
+            st.markdown("**Monthly behavioural states (quantile thresholds)**")
+            st.dataframe(
+                states_df.rename(columns={
+                    "year_month":          "Month",
+                    "macro_entropy_user":  "Entropy (user)",
+                    "macro_js_divergence": "JS divergence",
+                    "state":               "State",
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        st.success("Behavioural dynamics analysis complete.", icon="✅")
+        st.info(
+            "📊 Interactive charts and full HTML report export coming in the next release.",
             icon="🚧",
         )
 
