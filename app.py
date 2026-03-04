@@ -653,7 +653,7 @@ if st.session_state.dynamics_result:
         rolling_df  = _csv("rolling_entropy_250.csv")
         if not entropy_df.empty:
             st.plotly_chart(
-                charts.topic_entropy_timeline(entropy_df, rolling_df or None),
+                charts.topic_entropy_timeline(entropy_df, rolling_df),
                 use_container_width=True,
             )
 
@@ -673,7 +673,7 @@ if st.session_state.dynamics_result:
         shares_df = _csv("macro_monthly_domain_shares.csv")
         if not shares_df.empty:
             st.plotly_chart(
-                charts.domain_shares_area(shares_df, domain_summary or None),
+                charts.domain_shares_area(shares_df, domain_summary),
                 use_container_width=True,
             )
 
@@ -687,7 +687,7 @@ if st.session_state.dynamics_result:
         coup_df = _csv("coupling_by_domain.csv")
         if not coup_df.empty:
             st.plotly_chart(
-                charts.coupling_bar(coup_df, domain_summary or None),
+                charts.coupling_bar(coup_df, domain_summary),
                 use_container_width=True,
             )
 
