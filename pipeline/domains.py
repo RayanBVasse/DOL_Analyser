@@ -41,6 +41,85 @@ MIN_MSGS_PER_ROLE         = 50   # per-role minimum for JS divergence
 MIN_USER_MSGS_PER_MONTH   = 50   # months below this are excluded from all monthly outputs
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Label quality helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Conversational fillers that slip through sklearn's built-in "english" stop
+# words.  Applied only at *label generation* time — the underlying topic model
+# (TF-IDF fit, SVD, KMeans) is completely unaffected.
+_LABEL_STOPWORDS: frozenset = frozenset({
+    # Filler verbs
+    "let", "get", "got", "use", "used", "make", "made", "go", "going",
+    "know", "think", "want", "need", "see", "try", "help", "say", "said",
+    "tell", "take", "give", "gave", "put", "set", "ask", "work", "look",
+    "come", "came", "done", "doing", "feel", "felt", "keep", "kept",
+    "run", "ran", "start", "stop", "move", "like", "liked", "yes", "sure",
+    # Degree / hedging adverbs
+    "just", "really", "actually", "basically", "literally", "definitely",
+    "probably", "maybe", "quite", "rather", "pretty", "very", "simply",
+    "mostly", "mainly", "generally", "usually", "often", "always", "never",
+    # Conversational tokens
+    "ok", "okay", "right", "great", "good", "nice", "fine", "cool",
+    "thanks", "thank", "please", "hi", "hello", "hey", "bye", "sorry",
+    # Contracted negations (apostrophe stripped by tokeniser)
+    "don", "didn", "doesn", "isn", "wasn", "wouldn", "couldn",
+    "shouldn", "haven", "hadn", "aren", "weren",
+    # Vague common nouns
+    "thing", "things", "something", "anything", "everything", "nothing",
+    "way", "ways", "time", "times", "bit", "lot", "lots", "kind", "type",
+    "point", "part", "parts", "place", "case", "cases",
+    # Contraction fragments
+    "ve", "ll", "re",
+})
+
+
+def _clean_label_terms(terms: list[str], n: int = 4) -> list[str]:
+    """
+    Return up to *n* label-quality terms from a ranked term list.
+
+    Priority rules:
+      1. Bigrams (contain a space) are always preferred — more semantically specific.
+      2. Unigrams ≥ 4 chars that are not in _LABEL_STOPWORDS.
+      3. Short unigrams (2–3 chars) kept only if all-uppercase (acronyms like AI, EU).
+
+    Scans the full ranked list so that useful terms deep in the list are
+    surfaced when the top terms are all fillers.
+    """
+    seen_roots: set[str] = set()
+    result: list[str] = []
+
+    for t in terms:
+        if len(result) >= n:
+            break
+
+        t_lower = t.lower().strip()
+
+        # Always keep bigrams
+        if " " in t:
+            result.append(t)
+            seen_roots.add(t_lower)
+            continue
+
+        # Skip filler stop words
+        if t_lower in _LABEL_STOPWORDS:
+            continue
+
+        # Skip very short tokens unless they are acronyms (all-caps, len ≥ 2)
+        if len(t) <= 2 and not (t.isupper() and len(t) == 2):
+            continue
+
+        # Soft deduplication: skip if this term is a prefix/suffix of one already chosen
+        # (e.g. "chapter" if "chapters" already selected)
+        if any(t_lower.startswith(r) or r.startswith(t_lower) for r in seen_roots):
+            continue
+
+        result.append(t)
+        seen_roots.add(t_lower)
+
+    return result
+
+
 def run(
     db_path: str | Path,
     out_dir: str | Path,
@@ -152,7 +231,8 @@ def run(
                 term_scores.items(), key=lambda x: x[1], reverse=True
             )[:TOP_TERMS_MACRO]
         ]
-        auto_label = ", ".join(top_terms[:6]) if top_terms else f"domain_{md}"
+        clean      = _clean_label_terms(top_terms, n=4)
+        auto_label = ", ".join(clean) if clean else f"domain_{md}"
 
         macro_rows.append({
             "macro_domain":     md,
