@@ -750,3 +750,22 @@ st.caption(
     "DOL Analyser · open source · MIT licence · "
     "[github.com/RayanBVasse/DOL_Analyser](https://github.com/RayanBVasse/DOL_Analyser)"
 )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CLI entry point
+# ─────────────────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    """CLI entry point: the ``dol-analyser`` command launches the Streamlit UI."""
+    import subprocess
+    import sys
+
+    subprocess.run(
+        [sys.executable, "-m", "streamlit", "run", __file__],
+        check=True,
+    )
+
+
+if __name__ == "__main__":
+    main()
