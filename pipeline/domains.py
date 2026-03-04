@@ -33,11 +33,12 @@ from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import normalize
 
-DEFAULT_N_MACRO   = 8
-TOP_TERMS_FINE    = 20
-TOP_TERMS_MACRO   = 25
-RANDOM_SEED       = 42
-MIN_MSGS_PER_ROLE = 10
+DEFAULT_N_MACRO           = 8
+TOP_TERMS_FINE            = 20
+TOP_TERMS_MACRO           = 25
+RANDOM_SEED               = 42
+MIN_MSGS_PER_ROLE         = 50   # per-role minimum for JS divergence
+MIN_USER_MSGS_PER_MONTH   = 50   # months below this are excluded from all monthly outputs
 
 
 def run(
@@ -185,7 +186,13 @@ def run(
 
     # ── 8. Monthly macro metrics ──────────────────────────────────────────────
     _cb(0.78, "Computing monthly macro metrics…")
-    months = sorted(df["year_month"].dropna().unique())
+    # Only include months that have enough user messages to be meaningful
+    all_months     = sorted(df["year_month"].dropna().unique())
+    user_per_month = df[df["role"] == "user"].groupby("year_month").size()
+    months         = [
+        mo for mo in all_months
+        if user_per_month.get(mo, 0) >= MIN_USER_MSGS_PER_MONTH
+    ]
     metrics_rows = []
     shares_rows  = []
 

@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 from scipy.spatial.distance import jensenshannon
 
-MIN_MSGS_PER_ROLE = 10   # skip months where either role has too few messages
+MIN_MSGS_PER_ROLE = 50   # skip months where either role has too few messages
 
 
 def run(

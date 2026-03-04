@@ -697,7 +697,49 @@ if st.session_state.dynamics_result:
             st.plotly_chart(charts.shift_initiation_donut(shift_df),
                             use_container_width=True)
 
-    st.info("HTML report export coming next.", icon="🚧")
+    # ── Generate HTML report ──────────────────────────────────────────────────
+    st.divider()
+    st.markdown("### 📄 Export Report")
+
+    default_report = work / f"report_{Path(st.session_state.work_dir).name}.html"
+    report_path    = st.text_input(
+        "Save report to",
+        value=str(default_report),
+        help="Full path for the HTML report file.",
+    )
+
+    if st.button("Generate HTML report", type="primary", key="btn_report"):
+        from reports import html_export
+
+        pr = st.session_state.profile_result or {}
+        parse_r = st.session_state.parse_result or {}
+
+        meta = {
+            "format":        st.session_state.precheck_result.format
+                             if st.session_state.precheck_result else "—",
+            "user_messages": parse_r.get("user_messages", 0),
+            "threads":       parse_r.get("threads", 0),
+            "date_range":    (
+                f"{st.session_state.precheck_result.earliest_date:%b %Y}"
+                f" – "
+                f"{st.session_state.precheck_result.latest_date:%b %Y}"
+                if st.session_state.precheck_result
+                   and st.session_state.precheck_result.earliest_date
+                else "—"
+            ),
+            "months_scored": pr.get("months_scored", "—"),
+            "session_name":  Path(st.session_state.work_dir).name,
+        }
+
+        try:
+            written = html_export.build(
+                work_dir=st.session_state.work_dir,
+                meta=meta,
+                out_path=report_path,
+            )
+            st.success(f"Report saved to **{written}**", icon="✅")
+        except Exception as exc:
+            st.error(f"Report generation failed: {exc}", icon="❌")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Footer
