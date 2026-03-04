@@ -62,8 +62,8 @@ def _state_segmentation(metrics_path: Path, out_dir: Path) -> pd.DataFrame:
     """
     df = pd.read_csv(metrics_path).sort_values("year_month").reset_index(drop=True)
 
-    # Drop rows missing either signal
-    df = df.dropna(subset=["macro_entropy_user", "macro_js_divergence"])
+    # Drop rows missing either signal — reset again so iloc/loc indices stay contiguous
+    df = df.dropna(subset=["macro_entropy_user", "macro_js_divergence"]).reset_index(drop=True)
 
     if df.empty:
         return df
