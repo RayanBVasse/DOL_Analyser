@@ -1,4 +1,6 @@
 @echo off
+:: Always run from the folder that contains this script
+cd /d "%~dp0"
 setlocal
 echo.
 echo  DOL Analyser ^— one-time setup
