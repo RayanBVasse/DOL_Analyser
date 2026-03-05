@@ -268,7 +268,7 @@ if st.session_state.parse_result:
                     "structural_thinking_per1k":   "Structural thinking /1k",
                     "epistemic_uncertainty_per1k": "Epistemic uncertainty /1k",
                 }),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -287,7 +287,7 @@ if st.session_state.parse_result:
                         "significant":  "p < 0.05",
                     }
                 ),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -345,7 +345,7 @@ if st.session_state.profile_result:
                     "size":       "Messages",
                     "auto_label": "Key terms",
                 }),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -403,7 +403,7 @@ if st.session_state.topics_result:
                     "asst_msgs":     "AI msgs",
                     "js_divergence": "JS divergence",
                 }),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -461,7 +461,7 @@ if st.session_state.alignment_result:
                     "size":         "Messages",
                     "auto_label":   "Top terms",
                 }),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -526,7 +526,7 @@ if st.session_state.domains_result:
                     "r_asst_leads_user": "r (AI→you)",
                     "p_asst_leads_user": "p (AI→you)",
                 }),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -599,7 +599,7 @@ if st.session_state.domains_result:
                     "macro_js_divergence": "JS divergence",
                     "state":               "State",
                 }),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -646,7 +646,7 @@ if st.session_state.dynamics_result:
         traj = _csv_sub("profile", "trajectory_monthly.csv")
         if not traj.empty:
             st.plotly_chart(charts.cognitive_style_timeline(traj),
-                            use_container_width=True)
+                            width="stretch")
 
     with tabs[1]:
         entropy_df  = _csv("monthly_topic_entropy_tfidf.csv")
@@ -654,48 +654,48 @@ if st.session_state.dynamics_result:
         if not entropy_df.empty:
             st.plotly_chart(
                 charts.topic_entropy_timeline(entropy_df, rolling_df),
-                use_container_width=True,
+                width="stretch",
             )
 
     with tabs[2]:
         align_df = _csv("dyadic_alignment_monthly.csv")
         if not align_df.empty:
             st.plotly_chart(charts.dyadic_alignment_timeline(align_df),
-                            use_container_width=True)
+                            width="stretch")
 
     with tabs[3]:
         domain_summary = _csv("macro_domain_summary.csv")
         if not domain_summary.empty:
             st.plotly_chart(charts.macro_domain_bar(domain_summary),
-                            use_container_width=True)
+                            width="stretch")
 
     with tabs[4]:
         shares_df = _csv("macro_monthly_domain_shares.csv")
         if not shares_df.empty:
             st.plotly_chart(
                 charts.domain_shares_area(shares_df, domain_summary),
-                use_container_width=True,
+                width="stretch",
             )
 
     with tabs[5]:
         states_df = _csv("monthly_states.csv")
         if not states_df.empty:
             st.plotly_chart(charts.state_timeline(states_df),
-                            use_container_width=True)
+                            width="stretch")
 
     with tabs[6]:
         coup_df = _csv("coupling_by_domain.csv")
         if not coup_df.empty:
             st.plotly_chart(
                 charts.coupling_bar(coup_df, domain_summary),
-                use_container_width=True,
+                width="stretch",
             )
 
     with tabs[7]:
         shift_df = _csv("shift_initiation_summary.csv")
         if not shift_df.empty:
             st.plotly_chart(charts.shift_initiation_donut(shift_df),
-                            use_container_width=True)
+                            width="stretch")
 
     # ── Generate HTML report ──────────────────────────────────────────────────
     st.divider()
