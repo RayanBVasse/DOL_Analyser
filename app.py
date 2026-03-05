@@ -768,4 +768,14 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # Streamlit executes this file with __name__ == "__main__" via exec(),
+    # so we must check whether we're already inside a running Streamlit session
+    # before launching a second server.
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx as _get_ctx
+        _inside_streamlit = _get_ctx() is not None
+    except Exception:
+        _inside_streamlit = False
+
+    if not _inside_streamlit:
+        main()
