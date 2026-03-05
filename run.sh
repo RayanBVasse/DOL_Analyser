@@ -5,4 +5,4 @@ if [ ! -d ".venv" ]; then
     exit 1
 fi
 source .venv/bin/activate
-streamlit run app.py
+streamlit run app.py --server.fileWatcherType=none --server.port=8501

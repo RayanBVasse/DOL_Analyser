@@ -5,4 +5,4 @@ if not exist ".venv" (
     exit /b 1
 )
 call .venv\Scripts\activate.bat
-streamlit run app.py
+streamlit run app.py --server.fileWatcherType=none --server.port=8501
