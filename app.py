@@ -8,6 +8,7 @@ Run locally with:
 from __future__ import annotations
 
 import datetime
+import json
 from pathlib import Path
 
 import streamlit as st
@@ -112,30 +113,59 @@ with st.expander("How to export your conversations", expanded=False):
 1. Go to [claude.ai](https://claude.ai) → Settings → Privacy
 2. Click **Export data** → confirm via email
 3. Download the ZIP and extract `conversations.json`
+
+**Tip — short export windows (30 / 90 days)**
+If your platform limits exports to a recent time window, request multiple
+exports covering different periods and upload all the `conversations.json`
+files at once. The app merges them automatically and removes duplicates.
     """)
 
-uploaded = st.file_uploader(
-    "Drop your conversations.json here",
+uploaded_files = st.file_uploader(
+    "Drop your conversations.json file(s) here",
     type=["json"],
-    help="Select the conversations.json file from your ChatGPT or Claude export.",
+    accept_multiple_files=True,
+    help=(
+        "Upload one or more conversations.json files from ChatGPT or Claude. "
+        "Multiple files from the same platform are merged automatically — "
+        "useful when your export only covers 30 or 90 days."
+    ),
 )
 
-# If user uploads a new file, wipe all downstream results
-if uploaded is not None and st.session_state.json_tmp_path is None:
-    # Build a human-readable session name: <filename>_YYYYMMDD_HHMMSS
-    stem = Path(uploaded.name).stem[:30]          # cap at 30 chars
-    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    session_name = f"{stem}_{stamp}"
+# Process uploads when files arrive and no session exists yet
+if uploaded_files and st.session_state.json_tmp_path is None:
+    try:
+        raw_list = [f.read() for f in uploaded_files]
+        merged, _fmt, n_dupes = parse.merge_exports(raw_list)
 
-    work_dir = TEMP_OUT / session_name
-    work_dir.mkdir(parents=True, exist_ok=True)
+        # Session name: single filename or "merged_N_files"
+        if len(uploaded_files) == 1:
+            stem = Path(uploaded_files[0].name).stem[:30]
+        else:
+            stem = f"merged_{len(uploaded_files)}_files"
 
-    json_path = work_dir / "upload.json"
-    json_path.write_bytes(uploaded.read())
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        work_dir = TEMP_OUT / f"{stem}_{stamp}"
+        work_dir.mkdir(parents=True, exist_ok=True)
 
-    st.session_state.json_tmp_path = str(json_path)
-    st.session_state.work_dir      = str(work_dir)
-    _reset_downstream("precheck_result")
+        json_path = work_dir / "upload.json"
+        json_path.write_text(json.dumps(merged), encoding="utf-8")
+
+        st.session_state.json_tmp_path = str(json_path)
+        st.session_state.work_dir      = str(work_dir)
+
+        # Show merge summary if multiple files were combined
+        if len(uploaded_files) > 1:
+            st.success(
+                f"Merged **{len(uploaded_files)} files** → "
+                f"**{len(merged):,} conversations** "
+                + (f"({n_dupes:,} duplicates removed)" if n_dupes else ""),
+                icon="🔀",
+            )
+
+        _reset_downstream("precheck_result")
+
+    except ValueError as exc:
+        st.error(str(exc), icon="❌")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 2 — Pre-check

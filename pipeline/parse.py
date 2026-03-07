@@ -450,6 +450,86 @@ def _write_db(db_path: Path, messages: List[dict], threads: List[dict]) -> None:
 # Public API
 # ─────────────────────────────────────────────────────────────────────────────
 
+def merge_exports(raw_files: list[bytes]) -> tuple[list[dict], str, int]:
+    """Merge multiple conversations.json byte-strings into one deduplicated list.
+
+    Parameters
+    ----------
+    raw_files:
+        List of raw bytes from each uploaded conversations.json file.
+
+    Returns
+    -------
+    (conversations, format, n_duplicates_removed)
+        conversations          – merged, deduplicated list ready to be written
+                                 as upload.json and passed to run()
+        format                 – 'chatgpt' | 'claude'
+        n_duplicates_removed   – conversations present in more than one file
+
+    Raises
+    ------
+    ValueError  if any file is not a JSON array, formats are mixed across
+                files, or no recognised format is found.
+    """
+    all_convs: list[dict] = []
+    formats_seen: set[str] = set()
+
+    for raw in raw_files:
+        data = json.loads(raw)
+        if not isinstance(data, list):
+            raise ValueError(
+                "Each conversations.json must be a JSON array. "
+                "Make sure you are uploading the correct file from your export ZIP."
+            )
+
+        # Detect format from first few conversations
+        fmt = "unknown"
+        for conv in data[:5]:
+            if isinstance(conv, dict):
+                if "mapping" in conv and isinstance(conv.get("mapping"), dict):
+                    fmt = "chatgpt"
+                    break
+                if "chat_messages" in conv or (
+                    "uuid" in conv and ("name" in conv or "messages" in conv)
+                ):
+                    fmt = "claude"
+                    break
+
+        if fmt == "unknown":
+            raise ValueError(
+                "Could not detect the format (ChatGPT or Claude) in one of the "
+                "uploaded files. Please check you are uploading conversations.json "
+                "from the correct export ZIP."
+            )
+
+        formats_seen.add(fmt)
+        all_convs.extend(data)
+
+    if len(formats_seen) > 1:
+        raise ValueError(
+            f"Mixed export formats detected ({', '.join(sorted(formats_seen))}). "
+            "All uploaded files must be exports from the same platform."
+        )
+
+    detected_fmt = formats_seen.pop()
+
+    # Deduplicate by conversation ID (first occurrence = oldest file wins)
+    seen_ids: set[str] = set()
+    unique: list[dict] = []
+    for conv in all_convs:
+        if detected_fmt == "chatgpt":
+            cid = str(conv.get("id") or conv.get("conversation_id") or id(conv))
+        else:  # claude
+            cid = str(conv.get("uuid") or conv.get("id") or id(conv))
+
+        if cid not in seen_ids:
+            seen_ids.add(cid)
+            unique.append(conv)
+
+    n_dupes = len(all_convs) - len(unique)
+    return unique, detected_fmt, n_dupes
+
+
 def run(
     json_path: str | Path,
     db_path: str | Path,
