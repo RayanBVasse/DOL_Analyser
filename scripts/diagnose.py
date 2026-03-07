@@ -58,8 +58,17 @@ def _analyse(conversations: list[dict]) -> dict:
             if not isinstance(msg, dict):
                 continue
 
-            # Role
-            role = msg.get("role") or msg.get("author", {}).get("role")
+            # Role — Claude uses "sender" with values "human"/"assistant"
+            #         ChatGPT uses "author.role" with values "user"/"assistant"
+            role = (
+                msg.get("sender")                       # Claude
+                or msg.get("role")                      # Claude alt / ChatGPT flat
+                or (msg.get("author") or {}).get("role")  # ChatGPT nested
+                or ""
+            )
+            # Normalise "human" → "user"
+            if role == "human":
+                role = "user"
             if role not in ("user", "assistant"):
                 continue
 
@@ -156,16 +165,29 @@ def main() -> None:
     s = _analyse(merged)
     early, late = s["date_range"]
 
+    n_months     = len(s["all_months"])
+    avg_per_month = s["user_msgs"] / n_months if n_months else 0
+    pass_convs   = s["total_convs"] >= 50
+    pass_months  = n_months >= 3
+    pass_avg     = avg_per_month >= 30
+    all_pass     = pass_convs and pass_months and pass_avg
+
+    def _tick(ok): return "✓" if ok else "✗"
+
     print()
-    print("  ┌─ MERGED TOTALS ─────────────────────────────────────────────┐")
-    print(f"  │  Conversations : {s['total_convs']:>8,}                               │")
-    print(f"  │  Total messages: {s['total_msgs']:>8,}                               │")
-    print(f"  │  User messages : {s['user_msgs']:>8,}                               │")
-    print(f"  │  Asst messages : {s['asst_msgs']:>8,}                               │")
-    print(f"  │  Date range    : {early} → {late}                     │")
-    print(f"  │  Months covered: {len(s['all_months']):>8,}                               │")
-    print(f"  │  Min required  : {'2,000':>8}  {'✓ PASS' if s['user_msgs'] >= 2000 else '✗ FAIL (need more data)':}  │")
-    print("  └─────────────────────────────────────────────────────────────┘")
+    print("  ┌─ MERGED TOTALS ──────────────────────────────────────────────────┐")
+    print(f"  │  Conversations    : {s['total_convs']:>8,}  {_tick(pass_convs)} (min 50)              │")
+    print(f"  │  Total messages   : {s['total_msgs']:>8,}                                  │")
+    print(f"  │  User messages    : {s['user_msgs']:>8,}                                  │")
+    print(f"  │  Asst messages    : {s['asst_msgs']:>8,}                                  │")
+    if s["user_msgs"]:
+        ratio = s["asst_msgs"] / s["user_msgs"]
+        print(f"  │  Asst:user ratio  : {ratio:>7.1f}×                                  │")
+    print(f"  │  Date range       : {str(early):>7} → {late}                   │")
+    print(f"  │  Months covered   : {n_months:>8,}  {_tick(pass_months)} (min 3)               │")
+    print(f"  │  Avg user/month   : {avg_per_month:>8.0f}  {_tick(pass_avg)} (min 30)              │")
+    print(f"  │  Overall          : {'✓ PASS — ready to analyse' if all_pass else '✗ FAIL — see above':}           │")
+    print("  └──────────────────────────────────────────────────────────────────┘")
 
     # ── Per-month breakdown ───────────────────────────────────────────────────
     if args.verbose and s["all_months"]:
