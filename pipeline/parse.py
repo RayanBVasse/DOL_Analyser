@@ -580,8 +580,10 @@ def run(
         progress_cb(1.0, "Parse complete.")
 
     return {
-        "threads": len(threads),
-        "messages": len(messages),
+        "threads":       len(threads),
+        "messages":      len(messages),
         "user_messages": sum(1 for m in messages if m["role"] == "user"),
         "asst_messages": sum(1 for m in messages if m["role"] == "assistant"),
+        "user_chars":    sum(m.get("char_count", 0) for m in messages if m["role"] == "user"),
+        "asst_chars":    sum(m.get("char_count", 0) for m in messages if m["role"] == "assistant"),
     }
