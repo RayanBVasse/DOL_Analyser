@@ -227,10 +227,24 @@ if st.session_state.json_tmp_path:
     if st.session_state.precheck_result:
         r = st.session_state.precheck_result
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Format", r.format.upper() if r.format != "unknown" else "Unknown")
-        col2.metric("User messages", f"{r.user_messages:,}")
+        # ── Row 1: richness / diversity metrics ──────────────────────────
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Format",         r.format.upper() if r.format != "unknown" else "Unknown")
+        col2.metric("Conversations",  f"{r.total_conversations:,}")
         col3.metric("Months covered", r.months_covered)
+        col4.metric("Avg msgs/month", f"{r.avg_user_msgs_per_month:.0f}")
+
+        # ── Row 2: volume + assistant:user asymmetry ─────────────────────
+        col5, col6, col7, col8 = st.columns(4)
+        col5.metric("User messages", f"{r.user_messages:,}")
+        col6.metric("Asst messages", f"{r.assistant_messages:,}")
+        if r.msg_ratio is not None:
+            col7.metric("Asst:user msgs",  f"{r.msg_ratio:.1f}×",
+                        help="Assistant messages per user message")
+        if r.char_ratio is not None:
+            col8.metric("Asst:user chars", f"{r.char_ratio:.1f}×",
+                        help="Assistant characters written per user character — "
+                             "reflects how much content generation is offloaded to the AI")
 
         if r.earliest_date and r.latest_date:
             st.caption(
@@ -241,10 +255,10 @@ if st.session_state.json_tmp_path:
             st.warning(w, icon="⚠️")
 
         if r.ready:
-            st.success("File looks good — ready to parse.", icon="✅")
+            st.success("Data looks good — ready to parse.", icon="✅")
         else:
             st.error(
-                "File does not meet minimum requirements. See warnings above.",
+                "Data does not meet minimum requirements. See warnings above.",
                 icon="❌",
             )
 
