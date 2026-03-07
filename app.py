@@ -45,6 +45,7 @@ st.set_page_config(
 defaults = {
     "json_tmp_path":    None,
     "work_dir":         None,   # temp dir holding the SQLite db + CSVs
+    "upload_info":      None,   # dict with n_files / n_convs / n_dupes for display
     "precheck_result":  None,
     "parse_result":     None,
     "profile_result":   None,
@@ -152,20 +153,27 @@ if uploaded_files and st.session_state.json_tmp_path is None:
 
         st.session_state.json_tmp_path = str(json_path)
         st.session_state.work_dir      = str(work_dir)
-
-        # Show merge summary if multiple files were combined
-        if len(uploaded_files) > 1:
-            st.success(
-                f"Merged **{len(uploaded_files)} files** → "
-                f"**{len(merged):,} conversations** "
-                + (f"({n_dupes:,} duplicates removed)" if n_dupes else ""),
-                icon="🔀",
-            )
-
+        st.session_state.upload_info   = {
+            "n_files": len(uploaded_files),
+            "n_convs": len(merged),
+            "n_dupes": n_dupes,
+        }
         _reset_downstream("precheck_result")
 
     except ValueError as exc:
         st.error(str(exc), icon="❌")
+
+# Persistent upload summary (shown on every rerun once files are loaded)
+if st.session_state.upload_info:
+    info = st.session_state.upload_info
+    if info["n_files"] > 1:
+        dupe_note = f" · {info['n_dupes']:,} duplicates removed" if info["n_dupes"] else ""
+        st.success(
+            f"🔀 **{info['n_files']} files merged** → "
+            f"**{info['n_convs']:,} conversations**{dupe_note}",
+        )
+    else:
+        st.caption(f"📂 Loaded **{info['n_convs']:,} conversations** from 1 file.")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 2 — Pre-check
