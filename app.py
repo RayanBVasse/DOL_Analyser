@@ -39,6 +39,27 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Global CSS
+# ─────────────────────────────────────────────────────────────────────────────
+
+st.markdown("""
+<style>
+/* File-uploader drop zone — clear dashed border + hover highlight */
+[data-testid="stFileUploaderDropzone"] {
+    border: 2px dashed #4C78A8 !important;
+    border-radius: 10px !important;
+    background-color: #f5f8ff !important;
+    padding: 1.2rem !important;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+[data-testid="stFileUploaderDropzone"]:hover {
+    border-color: #2a5298 !important;
+    background-color: #eaf0ff !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Session state
 # ─────────────────────────────────────────────────────────────────────────────
 
