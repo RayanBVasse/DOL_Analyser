@@ -43,10 +43,11 @@ st.set_page_config(
 # ─────────────────────────────────────────────────────────────────────────────
 
 defaults = {
-    "json_tmp_path":    None,
-    "work_dir":         None,   # temp dir holding the SQLite db + CSVs
-    "upload_info":      None,   # dict with n_files / n_convs / n_dupes for display
-    "precheck_result":  None,
+    "json_tmp_path":      None,
+    "work_dir":           None,   # temp dir holding the SQLite db + CSVs
+    "upload_fingerprint": (),     # (name, size) tuples — detects upload set changes
+    "upload_info":        None,   # dict with n_files / n_convs / n_dupes for display
+    "precheck_result":    None,
     "parse_result":     None,
     "profile_result":   None,
     "topics_result":    None,
@@ -132,8 +133,15 @@ uploaded_files = st.file_uploader(
     ),
 )
 
-# Process uploads when files arrive and no session exists yet
-if uploaded_files and st.session_state.json_tmp_path is None:
+# Fingerprint of the current upload set (name + size), used to detect changes
+_current_fp = (
+    tuple(sorted((f.name, f.size) for f in uploaded_files))
+    if uploaded_files else ()
+)
+_stored_fp = st.session_state.get("upload_fingerprint", ())
+
+# Re-process whenever the upload set is non-empty AND has changed
+if uploaded_files and _current_fp != _stored_fp:
     try:
         raw_list = [f.read() for f in uploaded_files]
         merged, _fmt, n_dupes = parse.merge_exports(raw_list)
@@ -151,9 +159,10 @@ if uploaded_files and st.session_state.json_tmp_path is None:
         json_path = work_dir / "upload.json"
         json_path.write_text(json.dumps(merged), encoding="utf-8")
 
-        st.session_state.json_tmp_path = str(json_path)
-        st.session_state.work_dir      = str(work_dir)
-        st.session_state.upload_info   = {
+        st.session_state.upload_fingerprint = _current_fp
+        st.session_state.json_tmp_path      = str(json_path)
+        st.session_state.work_dir           = str(work_dir)
+        st.session_state.upload_info        = {
             "n_files": len(uploaded_files),
             "n_convs": len(merged),
             "n_dupes": n_dupes,
