@@ -22,9 +22,10 @@ data/
 *.sqlite
 *.db
 
-# PyInstaller output
+# PyInstaller output (keep our spec, ignore generated artefacts)
 dist/
 *.spec
+!dol_analyser.spec
 
 # OS
 .DS_Store
@@ -40,3 +41,6 @@ Thumbs.db
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local session outputs (temp_out/ dir kept, session contents ignored)
+temp_out/*/

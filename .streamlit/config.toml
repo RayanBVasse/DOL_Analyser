@@ -1,0 +1,4 @@
+[server]
+maxUploadSize = 500
+fileWatcherType = "none"
+port = 8501

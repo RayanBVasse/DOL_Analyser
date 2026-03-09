@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.backends.legacy:build"
 
 [project]
-name = "chat-analyser"
+name = "dol-analyser"
 version = "0.1.0"
-description = "Analyse your ChatGPT and Claude conversation history locally"
+description = "Distribution of Cognitive Load — analyse your ChatGPT and Claude conversation history locally"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-chat-analyser = "app:main"
+dol-analyser = "app:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

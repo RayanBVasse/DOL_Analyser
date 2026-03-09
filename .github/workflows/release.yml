@@ -1,60 +1,77 @@
 name: Build & Release
 
+# Triggered by a version tag: git tag v1.0.0 && git push --tags
 on:
   push:
     tags:
       - "v*"
 
 jobs:
+  # ── Build standalone executables ──────────────────────────────────────────
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            artifact: chat-analyser-windows.exe
-            pyinstaller_args: "--onefile --name chat-analyser-windows"
+            artifact: DOL_Analyser-windows.zip
+            zip_cmd: 7z a ../DOL_Analyser-windows.zip DOL_Analyser/
+
           - os: macos-latest
-            artifact: chat-analyser-macos
-            pyinstaller_args: "--onefile --name chat-analyser-macos"
+            artifact: DOL_Analyser-macos.zip
+            zip_cmd: zip -r ../DOL_Analyser-macos.zip DOL_Analyser/
+
           - os: ubuntu-latest
-            artifact: chat-analyser-linux
-            pyinstaller_args: "--onefile --name chat-analyser-linux"
+            artifact: DOL_Analyser-linux.zip
+            zip_cmd: zip -r ../DOL_Analyser-linux.zip DOL_Analyser/
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install dependencies
         run: |
+          pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build executable
-        run: pyinstaller ${{ matrix.pyinstaller_args }} app.py
+      - name: Build standalone app
+        run: pyinstaller dol_analyser.spec
+
+      # ── Zip the onedir output ──────────────────────────────────────────────
+      - name: Zip (Windows)
+        if: runner.os == 'Windows'
+        working-directory: dist
+        run: 7z a ../DOL_Analyser-windows.zip DOL_Analyser/
+
+      - name: Zip (macOS / Linux)
+        if: runner.os != 'Windows'
+        working-directory: dist
+        run: zip -r ../${{ matrix.artifact }} DOL_Analyser/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}*
+          path: ${{ matrix.artifact }}
 
+  # ── Publish GitHub Release ────────────────────────────────────────────────
   release:
     needs: build
     runs-on: ubuntu-latest
-
     permissions:
       contents: write
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist/
@@ -62,5 +79,20 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/**/*
+          files: dist/**/*.zip
           generate_release_notes: true
+          body: |
+            ## DOL Analyser — standalone release
+
+            Download the ZIP for your platform, extract it, and double-click **DOL_Analyser**
+            (Windows: `DOL_Analyser.exe` · Mac/Linux: `DOL_Analyser`).
+
+            No Python installation required.
+
+            | Platform | File |
+            |---|---|
+            | Windows 10/11 | `DOL_Analyser-windows.zip` |
+            | macOS 12+ | `DOL_Analyser-macos.zip` |
+            | Linux | `DOL_Analyser-linux.zip` |
+
+            > **macOS note:** on first launch right-click → Open to bypass Gatekeeper.
