@@ -5,22 +5,26 @@ Runs before the full pipeline. Inspects the raw conversations.json and returns
 a structured report so the UI can show the user what was found and whether the
 file meets the minimum requirements for analysis.
 
-Minimum requirements:
-    - Recognised format (ChatGPT or Claude)
-    - Total user messages >= MIN_USER_MESSAGES
-    - Date range spans >= MIN_MONTHS distinct calendar months
+Minimum requirements
+────────────────────
+- Recognised format (ChatGPT or Claude)
+- Distinct conversations (threads) >= MIN_CONVERSATIONS   [topic diversity]
+- Date range spans >= MIN_MONTHS distinct calendar months [temporal coverage]
+- Average user messages per month >= MIN_AVG_USER_MSGS_PER_MONTH [signal density]
 """
 
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-MIN_USER_MESSAGES = 2000
-MIN_MONTHS = 3
+MIN_CONVERSATIONS           = 50
+MIN_MONTHS                  = 3
+MIN_AVG_USER_MSGS_PER_MONTH = 30
 
 
 # ---------------------------------------------------------------------------
@@ -39,43 +43,80 @@ class PrecheckResult:
     user_messages: int = 0
     assistant_messages: int = 0
 
+    # Character counts (content volume)
+    user_chars: int = 0
+    assistant_chars: int = 0
+
     # Temporal coverage
     earliest_date: datetime | None = None
     latest_date: datetime | None = None
     months_covered: int = 0
+    avg_user_msgs_per_month: float = 0.0
 
-    # Requirement checks
-    passes_message_minimum: bool = False
+    # Requirement checks (new criteria)
+    passes_conversation_minimum: bool = False
     passes_month_minimum: bool = False
+    passes_avg_msgs_minimum: bool = False
 
     # Warnings raised during inspection
     warnings: list[str] = field(default_factory=list)
 
-    # Overall pass/fail
+    # ── Derived metrics ───────────────────────────────────────────────────
+
+    @property
+    def msg_ratio(self) -> float | None:
+        """Assistant-to-user message ratio (asst / user). None if no user messages."""
+        if self.user_messages == 0:
+            return None
+        return self.assistant_messages / self.user_messages
+
+    @property
+    def char_ratio(self) -> float | None:
+        """Assistant-to-user character ratio (asst / user). None if no user chars."""
+        if self.user_chars == 0:
+            return None
+        return self.assistant_chars / self.user_chars
+
+    # ── Pass/fail ─────────────────────────────────────────────────────────
+
     @property
     def ready(self) -> bool:
         return (
             self.format != "unknown"
-            and self.passes_message_minimum
+            and self.passes_conversation_minimum
             and self.passes_month_minimum
+            and self.passes_avg_msgs_minimum
         )
 
     def summary_lines(self) -> list[str]:
         lines = [
-            f"Format detected : {self.format.upper()} ({self.format_confidence})",
-            f"Conversations   : {self.total_conversations:,}",
-            f"Total messages  : {self.total_messages:,}",
-            f"  — user        : {self.user_messages:,}",
-            f"  — assistant   : {self.assistant_messages:,}",
+            f"Format detected      : {self.format.upper()} ({self.format_confidence})",
+            f"Conversations        : {self.total_conversations:,}",
+            f"Total messages       : {self.total_messages:,}",
+            f"  — user             : {self.user_messages:,}",
+            f"  — assistant        : {self.assistant_messages:,}",
         ]
+        if self.user_chars or self.assistant_chars:
+            lines += [
+                f"User chars           : {self.user_chars:,}",
+                f"Assistant chars      : {self.assistant_chars:,}",
+            ]
+            if self.char_ratio is not None:
+                lines.append(f"Asst:user char ratio : {self.char_ratio:.1f}×")
         if self.earliest_date and self.latest_date:
             lines += [
-                f"Date range      : {self.earliest_date:%Y-%m-%d} → {self.latest_date:%Y-%m-%d}",
-                f"Months covered  : {self.months_covered}",
+                f"Date range           : {self.earliest_date:%Y-%m-%d} → "
+                f"{self.latest_date:%Y-%m-%d}",
+                f"Months covered       : {self.months_covered}",
+                f"Avg user msgs/month  : {self.avg_user_msgs_per_month:.0f}",
             ]
         lines += [
-            f"Meets msg min ({MIN_USER_MESSAGES:,}) : {'YES' if self.passes_message_minimum else 'NO'}",
-            f"Meets month min ({MIN_MONTHS})  : {'YES' if self.passes_month_minimum else 'NO'}",
+            f"Meets conv min  (>={MIN_CONVERSATIONS:,}) : "
+            f"{'YES' if self.passes_conversation_minimum else 'NO'}",
+            f"Meets month min (>={MIN_MONTHS})  : "
+            f"{'YES' if self.passes_month_minimum else 'NO'}",
+            f"Meets avg/month (>={MIN_AVG_USER_MSGS_PER_MONTH}) : "
+            f"{'YES' if self.passes_avg_msgs_minimum else 'NO'}",
         ]
         if self.warnings:
             lines.append("Warnings:")
@@ -115,7 +156,7 @@ def _detect_format(data: object) -> tuple[Literal["chatgpt", "claude", "unknown"
 # ---------------------------------------------------------------------------
 
 def _extract_chatgpt_messages(data: list[dict]) -> list[dict]:
-    """Flatten ChatGPT mapping trees into a list of {role, timestamp} dicts."""
+    """Flatten ChatGPT mapping trees into a list of {role, timestamp, chars} dicts."""
     out = []
     for conv in data:
         mapping = conv.get("mapping") or {}
@@ -126,12 +167,20 @@ def _extract_chatgpt_messages(data: list[dict]) -> list[dict]:
             role = (msg.get("author") or {}).get("role", "")
             ts = msg.get("create_time")
             if role in ("user", "assistant") and ts:
-                out.append({"role": role, "timestamp": float(ts)})
+                # Extract text for character count
+                content = msg.get("content") or {}
+                parts = content.get("parts") or []
+                text = " ".join(str(p) for p in parts if p)
+                out.append({
+                    "role":      role,
+                    "timestamp": float(ts),
+                    "chars":     len(text),
+                })
     return out
 
 
 def _extract_claude_messages(data: list[dict]) -> list[dict]:
-    """Flatten Claude linear conversations into a list of {role, timestamp} dicts."""
+    """Flatten Claude conversations into a list of {role, timestamp, chars} dicts."""
     out = []
     for conv in data:
         messages = conv.get("chat_messages") or conv.get("messages") or []
@@ -139,12 +188,28 @@ def _extract_claude_messages(data: list[dict]) -> list[dict]:
             if not isinstance(msg, dict):
                 continue
             role = msg.get("sender") or msg.get("role") or ""
-            # Claude exports may use ISO strings or unix timestamps
-            ts_raw = msg.get("created_at") or msg.get("timestamp") or msg.get("create_time")
+            ts_raw = (
+                msg.get("created_at")
+                or msg.get("timestamp")
+                or msg.get("create_time")
+            )
             if role in ("human", "user", "assistant") and ts_raw is not None:
-                # Normalise role label
                 role = "user" if role in ("human", "user") else "assistant"
-                out.append({"role": role, "timestamp": _to_unix(ts_raw)})
+                # Text content
+                text = ""
+                raw_content = msg.get("content") or msg.get("text") or ""
+                if isinstance(raw_content, str):
+                    text = raw_content
+                elif isinstance(raw_content, list):
+                    text = " ".join(
+                        c.get("text", "") for c in raw_content
+                        if isinstance(c, dict)
+                    )
+                out.append({
+                    "role":      role,
+                    "timestamp": _to_unix(ts_raw),
+                    "chars":     len(text),
+                })
     return out
 
 
@@ -210,7 +275,19 @@ def run(json_path: str | Path, progress_cb=None) -> PrecheckResult:
     result.total_conversations = len(data)
 
     # ------------------------------------------------------------------
-    # 3. Extract messages
+    # 3. Check conversation (thread) diversity
+    # ------------------------------------------------------------------
+    result.passes_conversation_minimum = (
+        result.total_conversations >= MIN_CONVERSATIONS
+    )
+    if not result.passes_conversation_minimum:
+        result.warnings.append(
+            f"Only {result.total_conversations:,} conversations found; "
+            f"minimum required is {MIN_CONVERSATIONS} (for topic diversity)."
+        )
+
+    # ------------------------------------------------------------------
+    # 4. Extract messages (with character counts)
     # ------------------------------------------------------------------
     _progress(0.4, "Counting messages…")
     if result.format == "chatgpt":
@@ -218,34 +295,29 @@ def run(json_path: str | Path, progress_cb=None) -> PrecheckResult:
     else:
         messages = _extract_claude_messages(data)
 
-    result.total_messages = len(messages)
-    result.user_messages = sum(1 for m in messages if m["role"] == "user")
+    result.total_messages     = len(messages)
+    result.user_messages      = sum(1 for m in messages if m["role"] == "user")
     result.assistant_messages = sum(1 for m in messages if m["role"] == "assistant")
-
-    result.passes_message_minimum = result.user_messages >= MIN_USER_MESSAGES
-
-    if result.user_messages < MIN_USER_MESSAGES:
-        result.warnings.append(
-            f"Only {result.user_messages:,} user messages found; "
-            f"minimum required is {MIN_USER_MESSAGES:,}."
-        )
+    result.user_chars         = sum(m["chars"] for m in messages if m["role"] == "user")
+    result.assistant_chars    = sum(m["chars"] for m in messages if m["role"] == "assistant")
 
     # ------------------------------------------------------------------
-    # 4. Temporal coverage
+    # 5. Temporal coverage + avg msgs/month
     # ------------------------------------------------------------------
     _progress(0.7, "Checking date range…")
     timestamps = [m["timestamp"] for m in messages if m["timestamp"] is not None]
 
     if timestamps:
         result.earliest_date = datetime.fromtimestamp(min(timestamps), tz=timezone.utc)
-        result.latest_date = datetime.fromtimestamp(max(timestamps), tz=timezone.utc)
+        result.latest_date   = datetime.fromtimestamp(max(timestamps), tz=timezone.utc)
 
-        month_set = set()
-        for ts in timestamps:
-            dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-            month_set.add((dt.year, dt.month))
+        month_counts: Counter = Counter()
+        for m in messages:
+            if m["timestamp"] is not None and m["role"] == "user":
+                dt = datetime.fromtimestamp(m["timestamp"], tz=timezone.utc)
+                month_counts[(dt.year, dt.month)] += 1
 
-        result.months_covered = len(month_set)
+        result.months_covered = len(month_counts)
         result.passes_month_minimum = result.months_covered >= MIN_MONTHS
 
         if not result.passes_month_minimum:
@@ -253,6 +325,20 @@ def run(json_path: str | Path, progress_cb=None) -> PrecheckResult:
                 f"Only {result.months_covered} distinct month(s) of data found; "
                 f"minimum required is {MIN_MONTHS}."
             )
+
+        if result.months_covered > 0:
+            result.avg_user_msgs_per_month = (
+                result.user_messages / result.months_covered
+            )
+            result.passes_avg_msgs_minimum = (
+                result.avg_user_msgs_per_month >= MIN_AVG_USER_MSGS_PER_MONTH
+            )
+            if not result.passes_avg_msgs_minimum:
+                result.warnings.append(
+                    f"Average of {result.avg_user_msgs_per_month:.0f} user messages/month "
+                    f"is below the minimum of {MIN_AVG_USER_MSGS_PER_MONTH}/month. "
+                    "Monthly analyses may be unreliable."
+                )
     else:
         result.warnings.append("No valid timestamps found in messages.")
 
