@@ -67,6 +67,11 @@ Then open the browser tab that appears and upload your `conversations.json`.
 
 ---
 
+## Citation
+A Computational Pipeline for Quantifying Longitudinal Cognitive Dynamics in Sustained Human–LLM Interaction
+https://doi.org/10.5281/zenodo.18927752
+
+
 ## Licence
 
 MIT © 2026 Rayan B Vasse
